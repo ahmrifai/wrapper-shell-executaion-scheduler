@@ -1,0 +1,119 @@
+name: Build Windows EXE
+
+on:
+  push:
+    branches: [ main, master ]
+    tags:
+      - 'v*'
+  pull_request:
+    branches: [ main, master ]
+  workflow_dispatch:
+
+jobs:
+  build-windows:
+    name: Build Windows EXE
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.24.0'
+          channel: 'stable'
+          cache: true
+
+      - name: Enable Windows desktop
+        run: flutter config --enable-windows-desktop
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Analyze code
+        run: flutter analyze --no-fatal-infos
+
+      - name: Run tests
+        run: flutter test
+        continue-on-error: true
+
+      - name: Build Windows Release
+        run: flutter build windows --release
+
+      - name: Get version from pubspec
+        id: version
+        shell: pwsh
+        run: |
+          $content = Get-Content pubspec.yaml | Select-String "^version:"
+          $version = $content -replace "version:\s*", "" -replace "\+.*", ""
+          echo "VERSION=$($version.Trim())" >> $env:GITHUB_OUTPUT
+
+      - name: Create ZIP artifact
+        shell: pwsh
+        run: |
+          $buildPath = "build\windows\x64\runner\Release"
+          $zipName   = "SyncDashboard-Windows-v${{ steps.version.outputs.VERSION }}.zip"
+          Compress-Archive -Path "$buildPath\*" -DestinationPath $zipName
+          echo "ZIP created: $zipName"
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: SyncDashboard-Windows-v${{ steps.version.outputs.VERSION }}
+          path: build/windows/x64/runner/Release/
+          retention-days: 30
+
+      - name: Upload ZIP artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: SyncDashboard-Windows-v${{ steps.version.outputs.VERSION }}-zip
+          path: SyncDashboard-Windows-v${{ steps.version.outputs.VERSION }}.zip
+          retention-days: 30
+
+  release:
+    name: Create GitHub Release
+    needs: build-windows
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v')
+
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Get version from tag
+        id: version
+        run: echo "VERSION=${GITHUB_REF#refs/tags/v}" >> $GITHUB_OUTPUT
+
+      - name: Download build artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: SyncDashboard-Windows-v${{ steps.version.outputs.VERSION }}-zip
+          path: ./release-assets
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: "Sync Dashboard v${{ steps.version.outputs.VERSION }}"
+          tag_name: ${{ github.ref_name }}
+          body: |
+            ## 🔄 Inventory Sync Dashboard v${{ steps.version.outputs.VERSION }}
+
+            ### Cara Install
+            1. Download file `.zip` di bawah
+            2. Extract ke folder mana saja
+            3. Jalankan `sync_dashboard.exe`
+            4. Buka **Settings** → isi path Python dan script `.py`
+
+            ### Requirement
+            - Windows 10 / 11 (64-bit)
+            - Python 3.x ter-install di sistem
+
+            ---
+            Built automatically via GitHub Actions 🤖
+          files: ./release-assets/*.zip
+          draft: false
+          prerelease: false
