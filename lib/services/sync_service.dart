@@ -68,7 +68,8 @@ class SyncService {
 
       if (exitCode == 0) {
         lastSync = DateTime.now();
-        _addLog(LogLevel.success, 'Sync completed successfully (exit code: $exitCode)');
+        _addLog(LogLevel.success,
+            'Sync completed successfully (exit code: $exitCode)');
       } else {
         _addLog(LogLevel.error, 'Sync failed with exit code: $exitCode');
       }
@@ -84,57 +85,54 @@ class SyncService {
   }
 
   LogEntry _parseLine(String line) {
-    // Try to detect log level from line content
-    final upper = line.toUpperCase();
+    final regex = RegExp(
+      r'^(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})\s*\|\s*(\w+)\s*\|\s*(.*)',
+      dotAll: true,
+    );
 
-    LogLevel level;
-    String message = line;
+    final match = regex.firstMatch(line);
+    if (match != null) {
+      final levelStr = match.group(2)!.trim().toUpperCase();
+      final message = match.group(3)!.trim();
 
-    // Support format: "YYYY-MM-DD HH:MM:SS | LEVEL | message"
-    // or just detect keywords
-    if (line.contains('|')) {
-      final parts = line.split('|');
-      if (parts.length >= 3) {
-        final levelStr = parts[1].trim().toUpperCase();
-        message = parts.sublist(2).join('|').trim();
-        switch (levelStr) {
-          case 'SUCCESS':
-            level = LogLevel.success;
-            break;
-          case 'ERROR':
-            level = LogLevel.error;
-            break;
-          case 'WARNING':
-          case 'WARN':
-            level = LogLevel.warning;
-            break;
-          default:
-            level = LogLevel.info;
-        }
-        return LogEntry(
-          timestamp: DateTime.now(),
-          level: level,
-          message: message,
-        );
+      LogLevel level;
+      switch (levelStr) {
+        case 'SUCCESS':
+          level = LogLevel.success;
+          break;
+        case 'ERROR':
+          level = LogLevel.error;
+          break;
+        case 'WARNING':
+        case 'WARN':
+          level = LogLevel.warning;
+          break;
+        default:
+          level = LogLevel.info;
       }
+
+      return LogEntry(
+          timestamp: DateTime.now(), level: level, message: message);
     }
 
-    // Fallback: detect from keywords
-    if (upper.contains('ERROR') || upper.contains('FAIL') || upper.contains('EXCEPTION')) {
+    // Fallback
+    final upper = line.toUpperCase();
+    LogLevel level;
+    if (upper.contains('ERROR') ||
+        upper.contains('FAIL') ||
+        upper.contains('EXCEPTION')) {
       level = LogLevel.error;
     } else if (upper.contains('WARN')) {
       level = LogLevel.warning;
-    } else if (upper.contains('SUCCESS') || upper.contains('DONE') || upper.contains('COMPLETE')) {
+    } else if (upper.contains('SUCCESS') ||
+        upper.contains('DONE') ||
+        upper.contains('COMPLETE')) {
       level = LogLevel.success;
     } else {
       level = LogLevel.info;
     }
 
-    return LogEntry(
-      timestamp: DateTime.now(),
-      level: level,
-      message: line,
-    );
+    return LogEntry(timestamp: DateTime.now(), level: level, message: line);
   }
 
   void _addLog(LogLevel level, String message) {
