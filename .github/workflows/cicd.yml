@@ -36,26 +36,43 @@ jobs:
 
       - name: Run tests
         run: flutter test
+        # continue-on-error agar test gagal tidak block build & upload artifact
         continue-on-error: true
 
       - name: Build Windows Release
         run: flutter build windows --release
 
-      - name: Get version from pubspec
+      - name: Get version
         id: version
         shell: pwsh
         run: |
-          $content = Get-Content pubspec.yaml | Select-String "^version:"
-          $version = $content -replace "version:\s*", "" -replace "\+.*", ""
-          echo "VERSION=$($version.Trim())" >> $env:GITHUB_OUTPUT
+          # Pakai github.ref_name sebagai sumber utama:
+          # Push tag v1.0.2  → ref_name = "v1.0.2" → version = "1.0.2"
+          # Push ke branch   → ref_name = "main"   → fallback ke pubspec.yaml
+          $refName = "${{ github.ref_name }}"
+          Write-Host "ref_name: $refName"
+
+          if ($refName -match "^v(\d+\.\d+.*)$") {
+            $version = $Matches[1]
+            Write-Host "Versi dari tag: $version"
+          } else {
+            $content = (Get-Content pubspec.yaml | Select-String "^version:").ToString()
+            $version = ($content -replace "version:\s*", "" -replace "\+.*", "").Trim()
+            Write-Host "Versi dari pubspec: $version"
+          }
+
+          Write-Host "Final VERSION=$version"
+          echo "VERSION=$version" >> $env:GITHUB_OUTPUT
 
       - name: Create ZIP artifact
         shell: pwsh
         run: |
           $buildPath = "build\windows\x64\runner\Release"
-          $zipName   = "SyncDashboard-Windows-v${{ steps.version.outputs.VERSION }}.zip"
+          $version   = "${{ steps.version.outputs.VERSION }}"
+          $zipName   = "SyncDashboard-Windows-v$version.zip"
+          Write-Host "Creating ZIP: $zipName"
           Compress-Archive -Path "$buildPath\*" -DestinationPath $zipName
-          echo "ZIP created: $zipName"
+          Write-Host "ZIP created successfully"
 
       - name: Upload build artifact
         uses: actions/upload-artifact@v4
@@ -86,7 +103,11 @@ jobs:
 
       - name: Get version from tag
         id: version
-        run: echo "VERSION=${GITHUB_REF#refs/tags/v}" >> $GITHUB_OUTPUT
+        # Sumber versi sama persis dengan job build-windows saat trigger tag
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
+          echo "Versi dari tag: $VERSION"
 
       - name: Download build artifact
         uses: actions/download-artifact@v4
