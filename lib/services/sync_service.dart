@@ -97,7 +97,7 @@ class SyncService {
 
       LogLevel level;
       switch (levelStr) {
-        case 'SUCCESS':
+        case 'INFO':
           level = LogLevel.success;
           break;
         case 'ERROR':
